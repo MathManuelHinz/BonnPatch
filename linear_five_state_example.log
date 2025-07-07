@@ -1,0 +1,19 @@
+INFO:root:Started example script
+INFO:__main__:CCCCO passed
+INFO:__main__:CCCOC passed
+INFO:__main__:CCOCC passed
+INFO:__main__:CCCOO passed
+INFO:__main__:CCOCO passed
+INFO:__main__:COCCO passed
+INFO:__main__:OCCCO passed
+INFO:__main__:CCOOC passed
+INFO:__main__:COCOC passed
+INFO:__main__:OOOOC passed
+INFO:__main__:OOOCO passed
+INFO:__main__:OOCOO passed
+INFO:__main__:OOOCC passed
+INFO:__main__:OOCOC passed
+INFO:__main__:OCOOC passed
+INFO:__main__:COOOC passed
+INFO:__main__:OOCCO passed
+INFO:__main__:OCOCO passed
