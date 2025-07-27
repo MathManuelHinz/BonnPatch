@@ -3,13 +3,10 @@ from functools import reduce
 import logging
 from typing import Callable
 from scipy import linalg
-import tqdm
 import  numpy.typing as npt
 from typing import Callable, Tuple, Union, Optional
-from scipy.signal import bessel, filtfilt
 from scipy.special import poch
 import math
-import matplotlib.pyplot as plt
 
 import hohd
 
@@ -115,31 +112,6 @@ class HigherOrderHinkleyDetector:
         assert mu_0<mu_1
         return np.array(hohd.higher_order_hinkley_detector(z,mu_0,mu_1,self.cutoff,self.order))
     
-    def filter_and_plot(self,measured_times:matrix,values_at_measured_times:matrix,measured_values:matrix,mu_0=0.0,mu_1=1.0,show_plot=False,path="images/experiments/hohd.png"):
-        assert mu_0<mu_1
-        p=(mu_1-mu_0)/2
-        gs,jump_idxs,jump_values,filtered_z=hohd.higher_order_hinkley_detector_display(measured_values,mu_0,mu_1,self.cutoff,self.order)
-        gs=[np.array(g) for g in gs]
-        filtered_z=np.array(filtered_z)
-        if not show_plot: plt.clf()
-        fig, axs = plt.subplots(2,1,figsize=(13, 9))
-        fig.suptitle(f"Accuracy: {(values_at_measured_times==filtered_z).sum()/measured_times.shape[0]:.3f}")
-        axs[0].plot(measured_times,measured_values,c="black",alpha=0.3,label="$z_t$")
-        axs[0].step(measured_times,values_at_measured_times,where="post",c="red",alpha=0.3,label="$x_t$")
-        axs[0].plot(measured_times[:gs[0].shape[0]],p+gs[0],c="purple",alpha=0.6,label=r"$\eta \frac{g_t^"+str(self.order)+r"}{\lambda}$")
-        for g in gs[1:]:
-            axs[0].plot(measured_times[:g.shape[0]],p+g,c="purple",alpha=0.6)
-        axs[0].scatter(measured_times[jump_idxs],jump_values,c="purple",marker="*",alpha=0.6)
-        axs[0].legend()
-
-        axs[1].plot(measured_times,measured_values,c="black",alpha=0.3,label="$z_t$")
-        axs[1].step(measured_times,values_at_measured_times,where="post",c="red",alpha=0.3,label="$x_t$")
-        axs[1].plot(measured_times,filtered_z,c="blue",alpha=0.6,label=r"$\mathcal{F}(z_t)$")
-        axs[1].legend()
-        if show_plot: plt.show()
-        else: plt.savefig(path,dpi=300)
-
-        return filtered_z
 
 class AggregatedMarkovProcess:
     def __init__(self,topology:Topology,Q:matrix,f:Callable[[int],int],pi:matrix=None):
@@ -269,55 +241,6 @@ class AMPSampler:
 
         return AggregatedMarkovProcess(topology,Q,f,pi)
     
-    def sample_path_progressbar(self,X:AggregatedMarkovProcess,T:float=100.0,t_0:float=0.0):
-        """
-        Given Y=(f,X), samples a path of X and returns ts, xs which are are times and values at which events happen.
-        This version updates a progress bar in the terminal.
-        """
-        q,pi=X.get_generator_initial()
-        t=t_0 
-        s=self._rng.choice(q.shape[0],p=pi)
-        ts=[t_0]
-        xs=[s]
-        pbar = tqdm.tqdm(total=T)
-        while t<T:
-            pbar.n=np.floor(t) 
-            pbar.refresh()
-            scale=-1/q[s,s]
-            tau=self._rng.exponential(scale)
-            t+=tau
-            if t>=T: break 
-            p=q[s,:].copy()*scale 
-            p[s]=0
-            s=self._rng.choice(q.shape[0],p=p)
-            ts.append(t)
-            xs.append(s)
-        pbar.n=np.floor(T) 
-        pbar.refresh()
-        ts.append(T)
-        xs.append(xs[-1])
-        return np.array(ts),np.array(xs)
-    
-    def sample_path(self,Y:AggregatedMarkovProcess,T:float=100.0,t_0:float=0.0)->Tuple[matrix,matrix]:
-        """Given Y=(f,X), samples a path of X and returns ts, xs which are are times and values at which events happen."""
-        q,pi=Y.get_generator_initial()
-        t=t_0 
-        s=self._rng.choice(q.shape[0],p=pi)
-        ts=[t_0]
-        xs=[s]
-        while t<T:
-            scale=-1/q[s,s]
-            tau=self._rng.exponential(scale)
-            t+=tau
-            if t>=T: break 
-            p=q[s,:].copy()*scale 
-            p[s]=0
-            s=self._rng.choice(q.shape[0],p=p)
-            ts.append(t)
-            xs.append(s)
-        ts.append(T)
-        xs.append(xs[-1])
-        return np.array(ts),np.array(xs)
     
     def add_noise(self,y:matrix,SNR:float=5.0):
         """

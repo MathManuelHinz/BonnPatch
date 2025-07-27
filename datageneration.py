@@ -1,16 +1,20 @@
 import numpy as np
 import logging
-
-from helper_generation import  INTERESTING_MODELS, TOPOLOGIES, NAMES, add_mirrored_topologies, AggregatedMarkovProcess, AMPSampler, Topology, HigherOrderHinkleyDetector
+from scipy.signal import bessel, filtfilt
+from helper_generation import  INTERESTING_MODELS, TOPOLOGIES, NAMES, AggregatedMarkovProcess, AMPSampler, Topology, HigherOrderHinkleyDetector
 
 import gillepsie
 from helper_histograms import get_histogram
 
 sampler=AMPSampler()
 hohd=HigherOrderHinkleyDetector()
-
+fs = 100_000 # Sampling freq
+cutoff = 5  # keep below
+order = 4
+Wn = 10_000
+b, a = bessel(order, Wn, btype='low',fs=fs) 
 def generate_data_block(index,num=1000):
-    global sampler, hohd, topology
+    global sampler, hohd, topology, b, a
     T=100
     measured_times=np.arange(start=0,stop=T,step=1/(10**5))
     data={"oc":[],"co":[],"Q":[],"ns":[],"index":[]}
@@ -23,7 +27,7 @@ def generate_data_block(index,num=1000):
             idxs = (np.searchsorted(ts, measured_times, side="right") - 1)
             values_at_measured_times = np.where(idxs >= 0, Z._f(xs[idxs]), np.nan)
             measured_values=sampler.add_noise(values_at_measured_times)
-            ys=np.array(hohd.filter(measured_values),np.bool)
+            ys=np.array(hohd.filter(filtfilt(b,a,measured_values)),np.bool)
             _,_,h_oc,h_co,_=get_histogram(ts,ys,res=60)
             data["oc"].append(h_oc)
             data["co"].append(h_co)
