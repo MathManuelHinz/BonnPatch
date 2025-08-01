@@ -8,6 +8,7 @@ from typing import Callable, Tuple, Union, Optional
 from scipy.special import poch
 import math
 
+
 import hohd
 
 matrix=npt.NDArray[np.float64]
@@ -94,7 +95,7 @@ class HigherOrderHinkleyDetector:
             else: return p*poch(t_res,self.order)/math.factorial(self.order)
         elif cutoff_method=="simulate":
             gs=[np.arange(t_res+1)]
-            for i in range(1,self.order):
+            for _ in range(1,self.order):
                 cg=[0]
                 for t in range(1,t_res+1):
                     cg.append(cg[-1]+gs[-1][t])

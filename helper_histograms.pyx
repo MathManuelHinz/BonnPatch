@@ -77,9 +77,9 @@ cdef inline Py_ssize_t c_digitize(double value, double[::1] bin_edges, Py_ssize_
     
     # Clamp to valid range
     if low > res - 1:
-        return res - 1
+        return -1
     if low < 0:
-        return 0
+        return -1
     return low - 1
 
 cdef inline double c_hellinger_distance_1d(double[::1] mjp_1, double[::1] mjp_0) nogil:
@@ -210,11 +210,9 @@ cdef inline double c_l1_distance_2d(double[:, ::1] mjp_1, double[:, ::1] mjp_0) 
     
     return distance
 
-def get_histogram(double[::1] ts, BOOL_t[::1] ys, Py_ssize_t res=60):
+def get_histogram(double[::1] ts, BOOL_t[::1] ys, Py_ssize_t res=60, Py_ssize_t min_exp=-5,Py_ssize_t max_exp=1):
     """Optimized Cython version of get_histogram"""
     cdef:
-        double min_exp = -9.0
-        double max_exp = -3.0
         Py_ssize_t i, idx_o, idx_c
         Py_ssize_t n = ts.shape[0]
         BOOL_t current_state = ys[0]
@@ -242,58 +240,32 @@ def get_histogram(double[::1] ts, BOOL_t[::1] ys, Py_ssize_t res=60):
             else:
                 last_tc += dt
         else:
+            current_state = ys[i]
             if ys[i]:  # now 1, previously 0
                 last_tc += dt
                 idx_c = c_digitize(last_tc, bin_edges, res)
-                h_c[idx_c] += 1.0
+                if idx_c>=0: h_c[idx_c] += 1.0
                 if last_to > 0:
                     idx_o = c_digitize(last_to, bin_edges, res)
-                    h_oc[idx_o, idx_c] += 1.0
+                    if idx_o>=0 and idx_c>=0: h_oc[idx_o, idx_c] += 1.0
                 last_to = 0.0
             else:  # now 0, previously 1
                 last_to += dt
                 idx_o = c_digitize(last_to, bin_edges, res)
-                h_o[idx_o] += 1.0
+                if idx_o>=0: h_o[idx_o] += 1.0
                 if last_tc > 0:
                     idx_c = c_digitize(last_tc, bin_edges, res)
-                    h_co[idx_c, idx_o] += 1.0
+                    if idx_c>=0 and idx_o>=0:h_co[idx_c, idx_o] += 1.0
                 last_tc = 0.0
-            current_state = ys[i]
-    
-    # Normalize histograms
-    cdef double sum_o = 0.0, sum_c = 0.0, sum_oc = 0.0, sum_co = 0.0
-    
-    for i in range(res):
-        sum_o += h_o[i]
-        sum_c += h_c[i]
-        for j in range(res):
-            sum_oc += h_oc[i, j]
-            sum_co += h_co[i, j]
-    
-    if sum_o > 0:
-        for i in range(res):
-            h_o[i] /= sum_o
-    if sum_c > 0:
-        for i in range(res):
-            h_c[i] /= sum_c
-    if sum_oc > 0:
-        for i in range(res):
-            for j in range(res):
-                h_oc[i, j] /= sum_oc
-    if sum_co > 0:
-        for i in range(res):
-            for j in range(res):
-                h_co[i, j] /= sum_co
+            
     
     return (np.asarray(h_o), np.asarray(h_c), 
             np.asarray(h_oc), np.asarray(h_co), 
             bin_edges_np)
 
-def get_histogram_and_deviation(double[::1] ts, BOOL_t[::1] ys, Z, Py_ssize_t res=60):
+def get_histogram_and_deviation(double[::1] ts, BOOL_t[::1] ys, Z, Py_ssize_t res=60, Py_ssize_t min_exp=-5,Py_ssize_t max_exp=1):
     """Optimized Cython version of get_histogram_and_deviation"""
     cdef:
-        double min_exp = -9.0
-        double max_exp = -3.0
         Py_ssize_t i, j, idx_o, idx_c
         Py_ssize_t n = ts.shape[0]
         BOOL_t current_state = ys[0]
@@ -389,11 +361,9 @@ def get_histogram_and_deviation(double[::1] ts, BOOL_t[::1] ys, Z, Py_ssize_t re
             np.asarray(h_oc), np.asarray(h_co), 
             bin_edges_np, deviations)
 
-def get_histogram_and_hellinger(double[::1] ts, BOOL_t[::1] ys, Z, Py_ssize_t res=60):
+def get_histogram_and_hellinger(double[::1] ts, BOOL_t[::1] ys, Z, Py_ssize_t res=60, Py_ssize_t min_exp=-5,Py_ssize_t max_exp=1):
     """Optimized Cython version of get_histogram_and_deviation"""
     cdef:
-        double min_exp = -9.0
-        double max_exp = -3.0
         Py_ssize_t i, j, idx_o, idx_c
         Py_ssize_t n = ts.shape[0]
         BOOL_t current_state = ys[0]
@@ -489,11 +459,9 @@ def get_histogram_and_hellinger(double[::1] ts, BOOL_t[::1] ys, Z, Py_ssize_t re
             np.asarray(h_oc), np.asarray(h_co), 
             bin_edges_np, deviations)
 
-def get_histogram_and_l1(double[::1] ts, BOOL_t[::1] ys, Z, Py_ssize_t res=60):
+def get_histogram_and_l1(double[::1] ts, BOOL_t[::1] ys, Z, Py_ssize_t res=60, Py_ssize_t min_exp=-5,Py_ssize_t max_exp=1):
     """Optimized Cython version of get_histogram_and_deviation"""
     cdef:
-        double min_exp = -9.0
-        double max_exp = -3.0
         Py_ssize_t i, j, idx_o, idx_c
         Py_ssize_t n = ts.shape[0]
         BOOL_t current_state = ys[0]
