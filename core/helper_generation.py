@@ -7,15 +7,16 @@ import  numpy.typing as npt
 from typing import Callable, Tuple, Union, Optional
 from scipy.special import poch
 import math
+from abc import ABC, abstractmethod 
 
 
-import hohd
+from .hohd import *
 
 matrix=npt.NDArray[np.float64]
 
 logger = logging.getLogger(__name__)
 
-TOPOLOGIES=[np.array([[0,0,0,0,1],[0,0,1,0,0],[0,1,0,1,0],[0,0,1,0,1],[1,0,0,1,0]]),
+L5TOPOLOGIES=[np.array([[0,0,0,0,1],[0,0,1,0,0],[0,1,0,1,0],[0,0,1,0,1],[1,0,0,1,0]]),
             np.array([[0,0,0,1,1],[0,0,1,0,0],[0,1,0,1,0],[1,0,1,0,0],[1,0,0,0,0]]),
             np.array([[0,0,1,1,0],[0,0,1,0,0],[1,1,0,0,0],[1,0,0,0,1],[0,0,0,1,0]]),
             np.array([[0,1,0,0,1],[1,0,0,0,0],[0,0,0,1,0],[0,0,1,0,1],[1,0,0,1,0]]),
@@ -34,14 +35,15 @@ TOPOLOGIES=[np.array([[0,0,0,0,1],[0,0,1,0,0],[0,1,0,1,0],[0,0,1,0,1],[1,0,0,1,0
             np.array([[0,1,0,0,0],[1,0,0,1,0],[0,0,0,0,1],[0,1,0,0,1],[0,0,1,1,0]]),
             np.array([[0,0,0,1,0],[0,0,0,1,1],[0,0,0,0,1],[1,1,0,0,0],[0,1,1,0,0]])]
 
-NAMES=["CCCCO","CCCOC","CCOCC","CCCOO","CCOCO","COCCO","OCCCO","CCOOC","COCOC",
+L5NAMES=["CCCCO","CCCOC","CCOCC","CCCOO","CCOCO","COCCO","OCCCO","CCOOC","COCOC",
        "OOOOC","OOOCO","OOCOO","OOOCC","OOCOC","OCOOC","COOOC","OOCCO","OCOCO"]
 
-INTERESTING_MODELS={
-    "TwoHillsFast": {"topology":TOPOLOGIES[5],"name":NAMES[5],"generator":10_000*np.array([[-0.80294985,0.0,0.40123272,0.40171713,0.0],[0.0,-0.01381559,0.0,0.0,0.01381559],[0.10448446,0.0,-0.10448446, 0.0, 0.0],[0.86417804, 0.0, 0.0, -0.95476492, 0.09058688],[0.0, 0.9441882, 0.0, 0.24489628, -1.18908448]])}
+L5INTERESTING_MODELS={
+    "TwoHillsFast": {"topology":L5TOPOLOGIES[5],"name":L5NAMES[5],"generator":10_000*np.array([[-0.80294985,0.0,0.40123272,0.40171713,0.0],[0.0,-0.01381559,0.0,0.0,0.01381559],[0.10448446,0.0,-0.10448446, 0.0, 0.0],[0.86417804, 0.0, 0.0, -0.95476492, 0.09058688],[0.0, 0.9441882, 0.0, 0.24489628, -1.18908448]])}
 }
 
 def lu_inverse(A):
+    """Use LU decomposition to calculate the inverse of a psd matrix"""
     lu_decomp, piv = linalg.lu_factor(A)
     identity = np.eye(A.shape[0])
     A_inv = np.zeros_like(A)
@@ -49,20 +51,13 @@ def lu_inverse(A):
     for i in range(A.shape[0]):
         A_inv[:,i] = linalg.lu_solve((lu_decomp, piv), identity[:,i])
     return A_inv
-    
-def add_mirrored_topologies():
-    for i in range(9):
-        n_o=NAMES[i].count("O")
-        n_c=NAMES[i].count("C")
-        tmp=np.eye(5)
-        tmp[:n_c,:n_c]=TOPOLOGIES[i][n_o:,n_o:]
-        tmp[n_c:,n_c:]=TOPOLOGIES[i][:n_o,:n_o]
-        tmp[:n_c,n_c:]=TOPOLOGIES[i][n_o:,:n_o,]
-        tmp[n_c:,:n_c]=TOPOLOGIES[i][:n_o,n_o:]
-        TOPOLOGIES.append(tmp)
-        NAMES.append(reduce(lambda a,b:a+b,["C"*(a=="O")+"O"*(a=="C") for a in NAMES[i]],""))
 
 class Topology:
+    """
+    Topology defined by a adjacency matrix and the number of open states n_o. Optional arguments are 
+    the topology name in the case of linear topologies and 
+    the top_index in the case that the topology is one of the linear five state topologies.
+    """
     def __init__(self,adjacency_matrix:matrix,n_o,name:str="",top_index:Optional[int]=None):
         self.update_topology(adjacency_matrix,n_o,name,top_index)
 
@@ -74,17 +69,53 @@ class Topology:
         self._name=name 
         self.top_index=top_index
 
-class HigherOrderHinkleyDetector:
+class TopologyFamily(ABC):
+    """
+        A class describing a set of topologies and a way to sample from them. 
+        Can be used together with the AMP sampler to sample processes from the specified family.
+    """
 
+    @abstractmethod
+    def sample_index(self)->int:
+        pass 
+
+    @abstractmethod
+    def get_topology_by_index(self,index:int)->Topology:
+        pass 
+
+class LinearFiveStateToplogies(TopologyFamily):
+
+    def __init__(self, rng:Optional[np.random.Generator]=None):
+        if rng is None:
+            rng = np.random.default_rng()
+        self._rng = rng
+
+    def sample_index(self)->int:
+        return self._rng.integers(18)
+    
+    def get_topology_by_index(self,index:int)->Topology:
+        top=L5TOPOLOGIES[index]
+        top_name=L5NAMES[index]
+        n_o=top_name.count("O")
+        return Topology(top,n_o,top_name,top_index=index)
+
+class HigherOrderHinkleyDetector:
+    """
+    Class to filter a time series using the higher order Hinkley detector. Upon initialization, this 
+    class calculates the cutoff parameter lambda which is then used upon calling the filter method. 
+    Furthermore the order can be set to an arbitrary positive integer, while 1 (normal Hinkley detector)
+    and 8 (Higher order Hinkley detector) are the common choices. Due to multiple popular ways of choosing the
+    cutoff parameter, the cutoff method can be specified, see the documentation of the calculate_cutoff method.
+    """
     def __init__(self,order:int=8, cutoff_method:str="auto"):
         self.set_order(order)
         self.set_cutoff(self.calculate_cutoff(cutoff_method=cutoff_method))
 
-    def set_order(self,order):
+    def set_order(self,order)->None:
         """Updates the order of the detector, default is 8, order 1 is equivalent to a Hinkley detector"""
         self.order=order
 
-    def calculate_cutoff(self,cutoff_method="auto", t_res:int=3, snr:float=5.0,p:float=0.5):
+    def calculate_cutoff(self,cutoff_method="auto", t_res:int=3, snr:float=5.0,p:float=0.5)->float:
         """
         Calculates the cutoff value lambda used in the algorithm. Depending on the method other inputs (such as t_res,snr) are needed
         """
@@ -105,23 +136,27 @@ class HigherOrderHinkleyDetector:
             return 22*p/(snr**2)
         else: raise NotImplementedError
 
-    def set_cutoff(self, cutoff=2):
+    def set_cutoff(self, cutoff=2)->None:
         """Setter for the cutoff value"""
         self.cutoff=cutoff
 
-    def filter(self,z:matrix,mu_0=0.0,mu_1=1.0,):
+    def filter(self,z:matrix,mu_0=0.0,mu_1=1.0,)->matrix:
+        """Applies the HOHD to the signal z with assumed levels mu_0 and mu_1. If not provided the values 0 and 1 are chosen."""
         assert mu_0<mu_1
-        return np.array(hohd.higher_order_hinkley_detector(z,mu_0,mu_1,self.cutoff,self.order))
+        return np.array(higher_order_hinkley_detector(z,mu_0,mu_1,self.cutoff,self.order))
     
 
 class AggregatedMarkovProcess:
+    """
+    Describes an aggregated Markov process by its rate matrix Q, topology, aggregation map f and stationary distribution pi.
+    This class can be used to generate Paths using the gillepsie algorithm or to generate theoretical densities.
+    """
     def __init__(self,topology:Topology,Q:matrix,f:Callable[[int],int],pi:matrix=None):
         self.update_process(topology,Q,pi,f)
-        
     
     def get_stationary_distribution(self)->matrix:
         """
-        Return the stationary distribution and relaxation time of the Markov jump process.
+        Calculates and return the stationary distribution of the underlying process.
         """
         # Compute the stationary distribution by computing the left eigenvector of the intensity matrix with eigenvalue 0
         w, v = np.linalg.eig(
@@ -149,8 +184,8 @@ class AggregatedMarkovProcess:
 
     def get_theoretical_densities(self,mode:str="matrix")->Tuple[Callable[[np.float64],np.float64],Callable[[np.float64],np.float64],Callable[[np.float64],np.float64],Callable[[np.float64],np.float64]]:
         """
-        Calculate theoretical densities of the one and two dimensional dwell time distributions. Admissible modes: matrix, exponential
-        Returns the densities f_o,f_c,f_oc,f_co
+        Calculate theoretical densities of the one and two dimensional dwell time distributions. Admissible modes: matrixexpo, expo
+        Returns the densities f_o,f_c,f_oc,f_co, since any higher dimensional dwell time distributions follow from these cases.
         """
         n_o=self._topology._n_o
         q_oo=self._Q[:n_o,:n_o]
@@ -165,13 +200,13 @@ class AggregatedMarkovProcess:
         idx2 = np.where(np.isclose(w2, 1, rtol=1e-03, atol=1e-05))[0][0]
         pi_c=v2[:, idx2] / np.sum(v2[:, idx2])[np.newaxis]
 
-        if mode=="matrix":
+        if mode=="matrixexpo":
             f_o=lambda t: (pi_o@linalg.expm(q_oo*t)@q_oc).sum()
             f_c=lambda s: (pi_c@linalg.expm(q_cc*s)@q_co).sum()
             f_oc=lambda t,s: (pi_o@linalg.expm(q_oo*t)@q_oc@linalg.expm(q_cc*s)@q_co).sum()
             f_co=lambda s,t: (pi_c@linalg.expm(q_cc*s)@q_co@linalg.expm(q_oo*t)@q_oc).sum()
 
-        elif mode=="exponential":
+        elif mode=="expo":
             lambdas, x, y = linalg.eig(q_oo, left=True)
             gamma=pi_o@x
             delta=(y.T@q_oc).sum(axis=1)
@@ -202,30 +237,29 @@ class AggregatedMarkovProcess:
         return f_o, f_c, f_oc, f_co 
     
     def get_generator_initial(self)->Tuple[matrix,matrix]:
+        """
+        Returns the generator of the underlying processes as well as the stationary distribution, which is assumed to be the initial distribution.
+        """
         return self._Q, self._pi
 
 class AMPSampler:
+    """
+    Class for sampling both aggregated markov Processes and noise for paths generated by the gillepsie algorithm.
+    """
     def __init__(self):
         self.update_sampler()
     
     def update_sampler(self,rng=None):
+        """Method used to update the rng. If no rng is given, the default rng of numpy is used. """
         if rng is None:
             rng = np.random.default_rng()
         self._rng=rng
 
-    def sample_amp(self, topology:Union[Topology,None]=None, min_rate:float=10.0**2,max_rate:float=10.0**5):
-        """Samples a AMP, which satisfies detailed balance, from top. If top is None, a random topology is generated."""
-        if topology==None:
-            top_index=self._rng.integers(18)
-            top=TOPOLOGIES[top_index]
-            top_name=NAMES[top_index]
-            n_o=top_name.count("O")
-            n=top.shape[0]
-            topology=Topology(top,n_o,top_name,top_index=top_index)
-        else:
-            n_o=topology._n_o
-            n=topology.n
-            top=topology._topology
+    def sample_amp(self, topology:Topology, min_rate:float=10.0**2,max_rate:float=10.0**5):
+        """Samples a AMP, which satisfies detailed balance, with the given topology. """
+        n_o=topology._n_o
+        n=topology.n
+        top=topology._topology
         f=lambda x: x<n_o
         pi = self._rng.dirichlet(np.ones(n)) # Sample stationary distribution
         Q = np.zeros((n, n))
@@ -241,10 +275,12 @@ class AMPSampler:
         # Since by construction diag(pi)@Q=Q.T@diag(pi) we know that pi is still a valid stationary distribution
 
         return AggregatedMarkovProcess(topology,Q,f,pi)
-    
-    
+        
     def add_noise(self,y:matrix,SNR:float=5.0):
         """
         Adds white noise with sd 1/SNR to the time series y of shape n.
         """
         return y + np.random.normal(loc=0,scale=1/SNR,size=y.shape)
+
+    def sample_from_family(self,top_fam:TopologyFamily,min_rate:float=10.0**2,max_rate:float=10.0**5)->AggregatedMarkovProcess:
+        return self.sample_amp(top_fam.get_topology_by_index(top_fam.sample_index()),min_rate,max_rate)

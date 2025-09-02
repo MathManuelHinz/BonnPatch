@@ -1,0 +1,10 @@
+include README.md
+include LICENSE
+include requirements.txt
+recursive-include bonnpatch *.pyx *.pxd *.c *.h
+recursive-include bonnpatch *.py
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude *~
+global-exclude *.so
+global-exclude *.pyd
