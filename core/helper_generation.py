@@ -91,7 +91,7 @@ class LinearFiveStateToplogies(TopologyFamily):
         self._rng = rng
 
     def sample_index(self)->int:
-        return self._rng.integers(18)
+        return int(self._rng.integers(18))
     
     def get_topology_by_index(self,index:int)->Topology:
         top=L5TOPOLOGIES[index]
@@ -111,7 +111,7 @@ class HigherOrderHinkleyDetector:
         self.set_order(order)
         self.set_cutoff(self.calculate_cutoff(cutoff_method=cutoff_method))
 
-    def set_order(self,order)->None:
+    def set_order(self,order:int)->None:
         """Updates the order of the detector, default is 8, order 1 is equivalent to a Hinkley detector"""
         self.order=order
 
@@ -182,7 +182,7 @@ class AggregatedMarkovProcess:
         self._f=f
         self.theoretical_dists_ready=False 
 
-    def get_theoretical_densities(self,mode:str="matrix")->Tuple[Callable[[np.float64],np.float64],Callable[[np.float64],np.float64],Callable[[np.float64],np.float64],Callable[[np.float64],np.float64]]:
+    def get_theoretical_densities(self,mode:str="matrixexpo")->Tuple[Callable[[np.float64],np.float64],Callable[[np.float64],np.float64],Callable[[np.float64],np.float64],Callable[[np.float64],np.float64]]:
         """
         Calculate theoretical densities of the one and two dimensional dwell time distributions. Admissible modes: matrixexpo, expo
         Returns the densities f_o,f_c,f_oc,f_co, since any higher dimensional dwell time distributions follow from these cases.
@@ -255,26 +255,31 @@ class AMPSampler:
             rng = np.random.default_rng()
         self._rng=rng
 
-    def sample_amp(self, topology:Topology, min_rate:float=10.0**2,max_rate:float=10.0**5):
+    def sample_amp(self, topology:Topology, min_rate:float=10.0**2,max_rate:float=10.0**5, detailed_balance=True):
         """Samples a AMP, which satisfies detailed balance, with the given topology. """
         n_o=topology._n_o
         n=topology.n
         top=topology._topology
         f=lambda x: x<n_o
-        pi = self._rng.dirichlet(np.ones(n)) # Sample stationary distribution
-        Q = np.zeros((n, n))
-        
-        for i in range(n): #Set the lower diagonal to Q_ji=Q_ij pi[i]/pi[j]
-            for j in range(i+1, n):
-                Q[i, j] = self._rng.uniform(min_rate,max_rate)*top[i,j] # make sure the generator respects the topology
-                Q[j, i] = (pi[i] / pi[j]) * Q[i, j]
+        if detailed_balance:
+            pi = self._rng.dirichlet(np.ones(n)) # Sample stationary distribution
+            Q = np.zeros((n, n))
+            
+            for i in range(n): #Set the lower diagonal to Q_ji=Q_ij pi[i]/pi[j]
+                for j in range(i+1, n):
+                    Q[i, j] = self._rng.uniform(min_rate,max_rate)*top[i,j] # make sure the generator respects the topology
+                    Q[j, i] = (pi[i] / pi[j]) * Q[i, j]
 
-        for i in range(n):
-            Q[i, i] = -np.sum(Q[i, :])
-        
-        # Since by construction diag(pi)@Q=Q.T@diag(pi) we know that pi is still a valid stationary distribution
+            for i in range(n):
+                Q[i, i] = -np.sum(Q[i, :])
+            
+            # Since by construction diag(pi)@Q=Q.T@diag(pi) we know that pi is still a valid stationary distribution
 
-        return AggregatedMarkovProcess(topology,Q,f,pi)
+            return AggregatedMarkovProcess(topology,Q,f,pi)
+        else:
+            Q=self._rng.uniform(min_rate,max_rate,size=(n,n))*top
+            return AggregatedMarkovProcess(topology,Q,f)
+
         
     def add_noise(self,y:matrix,SNR:float=5.0):
         """
